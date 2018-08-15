@@ -31,9 +31,10 @@ repo_name=${1:-${REPO_NAME}}
 base_name=${2:-"${AZURE_BASE_NAME}"}
 app_name=${3:-"${base_name}-webapp"}
 plan_name=${4:-"${base_name}-plan"}
-group_name=${5:-"${base_name}-group"}
-location=${6:-${AZURE_DEFAULT_LOCATION}}
-gh_token=${7:-${GH_TOKEN}}
+redis_name=${5:-${base_name}-redis}
+group_name=${6:-"${base_name}-group"}
+location=${7:-${AZURE_DEFAULT_LOCATION}}
+gh_token=${8:-${GH_TOKEN}}
 
 scratch_runtime_id='node|8.1'
 go_runtime_id='go|1'
@@ -54,6 +55,25 @@ fi
 
 ## ensure groups
 ensure_group $group_name
+
+## ensure redis
+redis_id=$(az redis show --name $redis_name --resource-group $group_name \
+    --output tsv --query id 2> /dev/null)
+if [[ -z $redis_id ]]; then
+    redis_id=$(az redis create \
+        --name $redis_name \
+        --resource-group $group_name \
+        --location $location \
+        --sku 'Standard' \
+        --vm-size C4 \
+        --enable-non-ssl-port \
+        --query id --output tsv)
+fi
+redis_key=$(az redis list-keys \
+    --ids $redis_id \
+    --query primaryKey --output tsv)
+echo "ensure redis_id: $redis_id"
+echo "redis primaryKey: [$redis_key]"
 
 ## ensure App Service plan
 plan_id=$(az appservice plan show \
@@ -112,7 +132,10 @@ az webapp config appsettings set \
         "MSFT_CLIENT_SECRET=${MSFT_CLIENT_SECRET}" \
         "REDIRECT_SCHEME=https" \
         "REDIRECT_HOSTNAME=${app_name}.${url_suffix}" \
-        "COOKIE_KEY=${COOKIE_KEY}"
+        "COOKIE_KEY=${COOKIE_KEY}" \
+        "REDIS_HOSTNAME=${redis_name}" \
+        "REDIS_PORT=${REDIS_PORT}" \
+        "REDIS_KEY=$(az redis list-keys --ids $redis_id --query primaryKey --output tsv)"
 
 ## ensure operation
 curl -L "https://${app_name}.${url_suffix}/?name=gopherman"

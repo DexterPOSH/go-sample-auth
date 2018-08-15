@@ -10,30 +10,43 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/subosito/gotenv"
 	"golang.org/x/net/html"
+	"gopkg.in/boj/redistore.v1"
 )
 
 const (
-	envvarName  = "COOKIE_KEY"
 	sessionName = "auth_sample"
 
 	authenticatedKey = "authenticated"
 	stateKey         = "state"
 	nameKey          = "name"
 	emailKey         = "email"
+
+	redisSuffix = "redis.cache.windows.net"
 )
 
 var store sessions.Store
 
 func init() {
 	gotenv.Load()
-	key := os.Getenv(envvarName)
-	if len(key) == 0 {
-		log.Printf("Session (init): use envvar %v for cookie key\n", envvarName)
-		key = "makemerandom"
+	cookie_key := os.Getenv("COOKIE_KEY")
+	redis_host := os.Getenv("REDIS_HOSTNAME")
+	redis_port := os.Getenv("REDIS_PORT")
+	redis_key := os.Getenv("REDIS_KEY")
+	if len(cookie_key) == 0 {
+		log.Printf("Session (init): use envvar %v for cookie key\n", "COOKIE_KEY")
+		cookie_key = "makemerandom"
 	}
 
-	log.Printf("Session (init): creating new cookie store\n")
-	store = sessions.NewCookieStore([]byte(key))
+	redis_name := fmt.Sprintf("%s.%s:%s",
+		redis_host, redisSuffix, redis_port)
+
+	log.Printf("init: creating new store %s\n", redis_name)
+	var err error
+	store, err = redistore.NewRediStore(
+		10, "tcp", redis_name, redis_key, []byte(cookie_key))
+	if err != nil {
+		log.Fatalf("failed to create Redis Store: %s\n", err.Error())
+	}
 }
 
 // WithSession decorates an http.Handler to create a session and populates
